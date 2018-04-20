@@ -65,31 +65,38 @@ class UCASCourse(object):
         print('读取课件中......')
         list(map(self._get_resource_url, self.course_list))
 
-    def _get_resource_url(self, base_url, _path=''):
+    def _get_all_resource_url(self):
+        # 从课程的所有URL中获取对应的所有课件
+        print('读取课件中......')
+
+        list(map(self._get_resource_url, self.course_list))
+
+    def _get_resource_url(self, course_item, _path=''):
         base_url = 'http://course.ucas.ac.cn/access/content/group/'
         source_name = course_item[0]
         html = self.session.get(base_url+course_item[1], headers=self.headers).text
-        tds = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find_all('li')
+        lis = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find_all('li')
         res = set()
-        for td in tds:
-            url = td.find('a')
+        for li in lis:
+            url = li.find('a')
             if not url: continue
             url = urllib.parse.unquote(url['href'])
             if url == '../': continue
-            if 'Folder' in td.text:  # directory
-                self._get_resource_url(base_url + url, _path + '/' + url)
+            if 'folder' in li['class']:  # directory
+                self._get_resource_url([source_name,course_item[1]+ '/' + url], _path + '/' + url)
             if url.startswith('http:__'):  # Fix can't download when given a web link. eg: 计算机算法分析与设计
                 try:
-                    res.add((self.session.get(base_url + url, headers=self.headers, timeout=self._time_out).url, _path))
+                    res.add((self.session.get(base_url + course_item[1] +'/' + url, headers=self.headers, timeout=self._time_out).url, _path))
                 except requests.exceptions.ReadTimeout:
-                    print("Error-----------: ", base_url + url, "添加进下载路径失败,服务器长时间无响应")
+                    print("Error-----------: ", base_url + course_item[1] +'/' + url, "添加进下载路径失败,服务器长时间无响应")
                 except requests.exceptions.ConnectionError as e:
-                    print("Error-----------: ", base_url + url, "添加进下载路径失败,服务器长时间无响应")
+                    print("Error-----------: ", base_url + course_item[1] +'/' + url, "添加进下载路径失败,服务器长时间无响应")
             else:
-                res.add((base_url + url, _path))
+                res.add((base_url + course_item[1] +'/' + url, _path))
 
         for url, _path in res:
             self.to_download.append((source_name, _path, url))
+            
 
     def _start_download(self):
         # 多线程下载
