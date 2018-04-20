@@ -43,7 +43,7 @@ class UCASCourse(object):
                     semester = line.strip()
         return save_base_path, semester
 
-    def _get_course_page(self):
+    def _get_course_list(self):
         # 从sep中获取Identity Key来登录课程系统，并获取课程信息
         url = "http://sep.ucas.ac.cn/portal/site/16/801"
         r = self.session.get(url, headers=self.headers)
@@ -52,34 +52,24 @@ class UCASCourse(object):
         url = "http://course.ucas.ac.cn/portal/plogin?Identity=" + code
         self.headers['Host'] = "course.ucas.ac.cn"
         html = self.session.get(url, headers=self.headers).text
-        url = 'http://course.ucas.ac.cn' + \
-              BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find('frame', title='mainFrame')['src']
-        html = self.session.get(url, headers=self.headers).text
-        url = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find('a', class_='icon-sakai-membership')['href']
-        html = self.session.get(url, headers=self.headers).text
-        url = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find('iframe')['src']
-        html = self.session.get(url, headers=self.headers).text
+        dom_list = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find_all('div', class_='fav-title')
+        for item in dom_list:
+            if self.semester in item.find('a')['title']: # 只下载本学期课程
+                id = item.find('a')['href'].split('/')[-1]
+                self.course_list.append([item.find('a')['title'],id])
         return html
 
-    def _parse_course_list(self):
-        # 获取课程的所有URL
-        html = self._get_course_page()
-        self.course_list = ['http://course.ucas.ac.cn/portal/site/' + x for x in
-                            re.findall(r'http://course.ucas.ac.cn/portal/site/([\S]+)"', html)]
 
     def _get_all_resource_url(self):
         # 从课程的所有URL中获取对应的所有课件
         print('读取课件中......')
-        base_url = 'http://course.ucas.ac.cn/access/content/group/'
-        urls = [base_url + x.split('/')[-1] + '/' for x in self.course_list]
-        list(map(self._get_resource_url, urls))
+        list(map(self._get_resource_url, self.course_list))
 
-    def _get_resource_url(self, base_url, _path='', source_name=None):
-        html = self.session.get(base_url, headers=self.headers).text
-        tds = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find_all('td')
-        if not source_name:
-            source_name = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find('h2').text
-            if self.semester and source_name.find(self.semester) == -1: return  # download only current semester
+    def _get_resource_url(self, base_url, _path=''):
+        base_url = 'http://course.ucas.ac.cn/access/content/group/'
+        source_name = course_item[0]
+        html = self.session.get(base_url+course_item[1], headers=self.headers).text
+        tds = BeautifulSoup(html, self.__BEAUTIFULSOUPPARSE).find_all('li')
         res = set()
         for td in tds:
             url = td.find('a')
@@ -87,7 +77,7 @@ class UCASCourse(object):
             url = urllib.parse.unquote(url['href'])
             if url == '../': continue
             if 'Folder' in td.text:  # directory
-                self._get_resource_url(base_url + url, _path + '/' + url, source_name)
+                self._get_resource_url(base_url + url, _path + '/' + url)
             if url.startswith('http:__'):  # Fix can't download when given a web link. eg: 计算机算法分析与设计
                 try:
                     res.add((self.session.get(base_url + url, headers=self.headers, timeout=self._time_out).url, _path))
@@ -139,7 +129,7 @@ class UCASCourse(object):
                 print('{dic_name}  >> {sub_directory} Download a file'.format(**locals()))
 
     def start(self):
-        self._parse_course_list()
+        self._get_course_list()
         self._get_all_resource_url()
         self._start_download()
 
